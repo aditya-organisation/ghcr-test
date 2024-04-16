@@ -1,0 +1,53 @@
+name: Demo Push
+
+on:
+  push:
+    branches:
+      - main
+      - seed
+    tags:
+      - v*
+  pull_request:
+
+env:
+  IMAGE_NAME: ubuntu_test_image
+
+jobs:
+  push:
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build image
+        run: |
+          docker build . --file Dockerfile --tag $IMAGE_NAME --label "runnumber=${GITHUB_RUN_ID}"
+
+      - name: Log in to registry
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+
+      - name: Push image
+        run: |
+          IMAGE_ID=ghcr.io/${{ github.repository_owner }}/$IMAGE_NAME
+          # Normalize the image name to lower case
+          IMAGE_ID=$(echo $IMAGE_ID | tr '[A-Z]' '[a-z]')
+
+          # Determine version by stripping git ref prefix
+          VERSION=$(echo "${{ github.ref }}" | sed -e 's,.*/\(.*\),\1,')
+          # Strip the "v" prefix from tags
+          if [[ "${{ github.ref }}" == "refs/tags/"* ]]; then
+            VERSION=$(echo $VERSION | sed -e 's/^v//')
+          fi
+          # Use 'latest' tag for main branch
+          if [ "$VERSION" == "main" ]; then
+            VERSION=latest
+          fi
+          
+          echo "IMAGE_ID=$IMAGE_ID"
+          echo "VERSION=$VERSION"
+          docker tag $IMAGE_NAME $IMAGE_ID:$VERSION
+          docker push $IMAGE_ID:$VERSION
